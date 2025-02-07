@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Flappy Bird in the Browser</title>
+    <style>
+      /* 
+        Make the game canvas centered on the page, with no extra scrollbars.
+        The background is a simple sky/green gradient to match your original. 
+      */
+      body {
+        margin: 0;
+        padding: 0;
+        background: #87CEEB; /* fallback */
+        overflow: hidden;
+      }
+      #gameCanvas {
+        display: block;
+        margin: 0 auto;
+        background: linear-gradient(#87CEEB, #228B22);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Our game will render in this canvas. -->
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+    <script>
+      /*****************************************************************************
+       * Game Constants (mirroring your Ruby constants)
+       *****************************************************************************/
+      const WIDTH        = 640;    // Canvas/Game width
+      const HEIGHT       = 480;    // Canvas/Game height
+      const GRAVITY      = 0.4;    // Bird falling speed
+      const JUMP_POWER   = -8;     // Bird flap speed
+      const PIPE_WIDTH   = 60;     // Pipe width
+      const PIPE_GAP     = 200;    // Gap between top & bottom pipes
+      const SCROLL_SPEED = 3;      // Speed of pipes moving left
+
+      /*****************************************************************************
+       * Set up the Canvas & Context
+       *****************************************************************************/
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+
+      /*****************************************************************************
+       * Bird Class
+       *  - Manages its position, velocity, and drawing
+       *****************************************************************************/
+      class Bird {
+        constructor() {
+          this.x = 50;
+          this.y = HEIGHT / 2;
+          this.radius = 20;
+          this.velocity = 0;
+        }
+
+        // Apply gravity and move bird down.
+        update() {
+          this.velocity += GRAVITY;
+          this.y += this.velocity;
+        }
+
+        // Flap sets velocity to a negative (going up).
+        flap() {
+          this.velocity = JUMP_POWER;
+        }
+
+        // Draw our bird as a yellow circle.
+        draw() {
+          // We'll mimic the "draw_circle" logic: just one arc for simplicity.
+          ctx.fillStyle = "yellow";
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      /*****************************************************************************
+       * Pipe Class
+       *  - Each pipe has x, y, width, height. 
+       *  - "scored" indicates if we've already counted a point for this pipe.
+       *****************************************************************************/
+      class Pipe {
+        constructor(x, y, height) {
+          this.x      = x;
+          this.y      = y;
+          this.width  = PIPE_WIDTH;
+          this.height = height;
+          this.scored = false;
+        }
+
+        // Move pipe left.
+        update() {
+          this.x -= SCROLL_SPEED;
+        }
+
+        // Draw the pipe as a green rectangle.
+        draw() {
+          ctx.fillStyle = "green";
+          ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+      }
+
+      /*****************************************************************************
+       * Game State Variables
+       *****************************************************************************/
+      let bird;
+      let pipes       = [];
+      let score       = 0;
+      let gameOver    = false;
+      let started     = false; // Wait for player to press Space to start.
+
+      // We'll create a font style for drawing text:
+      const fontSize  = 32;
+      ctx.font        = `${fontSize}px sans-serif`;
+
+      /*****************************************************************************
+       * Initialize / Reset Game
+       *  - Called first time or whenever the player restarts after game over.
+       *****************************************************************************/
+      function initGame() {
+        bird      = new Bird();
+        pipes     = [];
+        score     = 0;
+        gameOver  = false;
+        started   = false;
+
+        // Create our initial pipes:
+        generatePipe();
+      }
+
+      /*****************************************************************************
+       * Generate a Pair of Pipes
+       *  - Like your Ruby code, we pick a random "opening_y" and create a top/bottom pipe.
+       *****************************************************************************/
+      function generatePipe() {
+        const openingY = randomInt(50, HEIGHT - 50 - PIPE_GAP);
+
+        // Top pipe
+        const topPipe = new Pipe(WIDTH, 0, openingY);
+
+        // Bottom pipe
+        const bottomPipe = new Pipe(
+          WIDTH,
+          openingY + PIPE_GAP,
+          HEIGHT - (openingY + PIPE_GAP)
+        );
+
+        pipes.push(topPipe, bottomPipe);
+      }
+
+      // Helper to get a random integer in a range
+      function randomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1) + min);
+      }
+
+      /*****************************************************************************
+       * update() - Called ~60 times/sec via requestAnimationFrame
+       *****************************************************************************/
+      function update() {
+        // If not started or gameOver, skip logic.
+        if (!started) return;
+        if (gameOver) return;
+
+        // Update the bird.
+        bird.update();
+
+        // Move each pipe left.
+        pipes.forEach(pipe => pipe.update());
+
+        // Remove pipes that are off-screen to the left.
+        pipes = pipes.filter(pipe => pipe.x + pipe.width >= 0);
+
+        // If the last pipe has moved halfway across, generate a new pair.
+        if (pipes.length > 0) {
+          const lastPipe = pipes[pipes.length - 1];
+          if (lastPipe.x < WIDTH - 200) {
+            generatePipe();
+          }
+        }
+
+        // Check collisions.
+        checkCollisions();
+
+        // Update score.
+        updateScore();
+      }
+
+      /*****************************************************************************
+       * draw() - Render everything each frame
+       *****************************************************************************/
+      function draw() {
+        // Clear the canvas first.
+        // We'll also do a quick "gradient" effect using a standard linear gradient.
+        const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+        gradient.addColorStop(0, "#87CEEB"); // sky blue
+        gradient.addColorStop(1, "#228B22"); // forest green
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        // Draw bird.
+        bird.draw();
+
+        // Draw pipes.
+        pipes.forEach(pipe => pipe.draw());
+
+        // Draw score
+        ctx.fillStyle = "black";
+        ctx.fillText("Score: " + score, 10, 40);
+
+        // If not started, show "Press Space to Start"
+        if (!started && !gameOver) {
+          const message = "Press Space to Start";
+          centerText(message, HEIGHT / 2, "white");
+        }
+
+        // If gameOver, show "Game Over! Press Space to Restart"
+        if (gameOver) {
+          const message = "Game Over! Press Space to Restart";
+          centerText(message, HEIGHT / 2, "red");
+        }
+      }
+
+      // Helper to draw centered text
+      function centerText(text, y, color) {
+        const textWidth = ctx.measureText(text).width;
+        const x = (WIDTH - textWidth) / 2;
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y);
+      }
+
+      /*****************************************************************************
+       * checkCollisions() - see if bird hits top/bottom edges or any pipe
+       *****************************************************************************/
+      function checkCollisions() {
+        // Check top/bottom
+        if (bird.y - bird.radius < 0 || bird.y + bird.radius > HEIGHT) {
+          gameOver = true;
+          return;
+        }
+
+        // Check each pipe
+        for (let pipe of pipes) {
+          // Horizontal overlap?
+          if (
+            bird.x + bird.radius > pipe.x &&
+            bird.x - bird.radius < pipe.x + pipe.width
+          ) {
+            // If it's a top pipe
+            if (pipe.y === 0) {
+              // If bird's top is above the bottom of top pipe
+              if (bird.y - bird.radius < pipe.height) {
+                gameOver = true;
+                return;
+              }
+            } else {
+              // It's a bottom pipe
+              // If bird's bottom is below the top of bottom pipe
+              if (bird.y + bird.radius > pipe.y) {
+                gameOver = true;
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      /*****************************************************************************
+       * updateScore() - increment score for passing top pipes
+       *****************************************************************************/
+      function updateScore() {
+        for (let pipe of pipes) {
+          // Only top pipe (pipe.y===0) and not yet scored
+          if (pipe.y === 0 && !pipe.scored) {
+            // If bird passes pipe's right edge
+            if (bird.x > pipe.x + pipe.width) {
+              score++;
+              pipe.scored = true;
+            }
+          }
+        }
+      }
+
+      /*****************************************************************************
+       * Handle keyboard input
+       *****************************************************************************/
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Space") {
+          if (!started) {
+            started = true;
+          } else if (gameOver) {
+            initGame();
+            started = true;
+          } else {
+            // If game running, flap
+            bird.flap();
+          }
+        }
+      });
+
+      /*****************************************************************************
+       * Main Loop with requestAnimationFrame
+       *****************************************************************************/
+      function loop() {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      /*****************************************************************************
+       * Start everything
+       *****************************************************************************/
+      initGame();    // set up initial game state
+      loop();        // start the render/update loop
+    </script>
+  </body>
+</html>
